@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Element Cloning and Dragging</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      overflow: hidden;
+      position: relative;
+    }
+    #sidebar {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 150px;
+      background-color: #f0f0f0;
+      padding: 10px;
+      box-shadow: 2px 0 5px rgba(0, 0, 0, 0.3);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow-y: auto;
+    }
+    .element {
+      padding: 10px;
+      margin: 5px 0;
+      font-size: 2rem;
+      cursor: pointer;
+      display: inline-block;
+      width: 100%;
+      text-align: center;
+      background-color: #fff;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    .cloned {
+      position: absolute;
+      cursor: move;
+      padding: 10px;
+      margin: 0;
+      font-size: 2rem;
+      z-index: 1000;
+    }
+    #sound-button {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 10px;
+      background-color: #f0f0f0;
+      border: 1px solid #ccc;
+      cursor: pointer;
+    }
+    #counter {
+      position: absolute;
+      top: 10px;
+      left: calc(50% - 75px);
+      width: 150px;
+      text-align: center;
+      font-size: 1.5rem;
+      background-color: #fff;
+      border: 1px solid #ddd;
+      padding: 5px;
+      border-radius: 4px;
+      box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.3);
+    }
+    #discovery-counter {
+      position: absolute;
+      bottom: 10px;
+      left: calc(50% - 150px);
+      width: 300px;
+      text-align: center;
+      font-size: 1.5rem;
+      background-color: #fff;
+      border: 1px solid #ddd;
+      padding: 5px;
+      border-radius: 4px;
+      box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.3);
+    }
+    #win-message {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      font-size: 2rem;
+      background-color: #fff;
+      border: 1px solid #ddd;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.5);
+    }
+    #win-message small {
+      display: block;
+      margin-top: 10px;
+      font-size: 1rem;
+    }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div class="element" data-type="Earth" data-label="Earth">🌍 Earth</div>
+  <div class="element" data-type="Wind" data-label="Wind">💨 Wind</div>
+  <div class="element" data-type="Fire" data-label="Fire">🔥 Fire</div>
+  <div class="element" data-type="Water" data-label="Water">💧 Water</div>
+</div>
+
+<audio id="combination-sound" src="https://www.myinstants.com/media/sounds/infinite-craft-combination-sound.mp3"></audio>
+<audio id="background-music" src="https://audio.jukehost.co.uk/wl0e25Z3hlm71SRocr2JRVTYWxsnRLuA" loop></audio>
+
+<button id="sound-button">Turn Sound On</button>
+<div id="counter">Total Elements: 4</div>
+<div id="discovery-counter">How many elements you discovered: 4</div>
+
+<div id="win-message">
+  <p>You won! 🤑🤑🤑</p>
+  <small>Thanks for playing this short game 😊😊😊</small>
+</div>
+
+<script>
+  let currentDraggedElement = null;
+  let elementsToCheck = [];
+  let soundEnabled = false; // Track sound state
+
+  // Variable to specify the total number of elements, or "Don't know" to calculate dynamically
+  const totalElementsVariable = "39";
+
+  // UHHHHH
+  const lookupTable = {
+    'Fire+Fire': { emoji: '🔥', name: 'Fire' },
+    'Water+Fire': { emoji: '💨', name: 'Steam' },
+    'Wind+Fire': { emoji: '🌫️', name: 'Smoke' },
+    'Earth+Fire': { emoji: '🌋', name: 'Magma' },
+    'Water+Water': { emoji: '🧊', name: 'Ice' },
+    'Wind+Water': { emoji: '🧊', name: 'Ice' },
+    'Earth+Water': { emoji: '🪨', name: 'Mud' },
+    'Wind+Wind': { emoji: '🌬️', name: 'Air' },
+    'Earth+Wind': { emoji: '⛈️', name: 'Storm' },
+    'Earth+Earth': { emoji: '🌧️', name: 'Mud' },
+    'Steam+Fire': { emoji: '💧', name: 'Water' },
+    'Smoke+Fire': { emoji: '💨', name: 'Air' },
+    'Magma+Fire': { emoji: '🌋', name: 'Lava' },
+    'Ice+Fire': { emoji: '💨', name: 'Steam' },
+    'Mud+Fire': { emoji: '🌋', name: 'Lava' },
+    'Air+Fire': { emoji: '⚡', name: 'Lightning' },
+    'Storm+Fire': { emoji: '⚡', name: 'Lightning' },
+    'Steam+Water': { emoji: '🟡', name: 'Hydrogen' },
+    'Smoke+Water': { emoji: '💨', name: 'Steam' },
+    'Magma+Water': { emoji: '💨', name: 'Steam' },
+    'Ice+Water': { emoji: '🧊', name: 'Iceberg' },
+    'Mud+Water': { emoji: '🧱', name: 'Clay' },
+    'Air+Water': { emoji: '❄️', name: 'Ice' },
+    'Storm+Water': { emoji: '🌧️', name: 'Rain' },
+    'Steam+Wind': { emoji: '⚡', name: 'Electricity' },
+    'Smoke+Wind': { emoji: '💨', name: 'Air' },
+    'Magma+Wind': { emoji: '🌋', name: 'Volcano' },
+    'Ice+Wind': { emoji: '💧', name: 'Water' },
+    'Mud+Wind': { emoji: '🏖️', name: 'Sand' },
+    'Air+Wind': { emoji: '💨', name: 'Oxygen' },
+    'Storm+Wind': { emoji: '💨', name: 'Oxygen' },
+    'Steam+Earth': { emoji: '🟤', name: 'Mud' },
+    'Smoke+Earth': { emoji: '🔥', name: 'Ash' },
+    'Magma+Earth': { emoji: '🪨', name: 'Basalt' },
+    'Ice+Earth': { emoji: '💩', name: 'Mud' },
+    'Mud+Earth': { emoji: '🪨', name: 'Clay' },
+    'Air+Earth': { emoji: '🌫️', name: 'Dust' },
+    'Storm+Earth': { emoji: '🪨', name: 'Mud' },
+    'Steam+Steam': { emoji: '💧', name: 'Water' },
+    'Smoke+Steam': { emoji: '🌫️', name: 'Fog' },
+    'Magma+Steam': { emoji: '💧', name: 'Water' },
+    'Ice+Steam': { emoji: '💧', name: 'Water' },
+    'Mud+Steam': { emoji: '💧', name: 'Water' },
+    'Air+Steam': { emoji: '💧', name: 'Water' },
+    'Storm+Steam': { emoji: '🌧️', name: 'Rain' },
+    'Smoke+Smoke': { emoji: '🔥', name: 'Fire' },
+    'Magma+Smoke': { emoji: '🌋', name: 'Volcano' },
+    'Ice+Smoke': { emoji: '💧', name: 'Water' },
+    'Mud+Smoke': { emoji: '🧱', name: 'Clay' },
+    'Air+Smoke': { emoji: '🪨', name: 'Carbon' },
+    'Storm+Smoke': { emoji: '💨', name: 'Oxygen' },
+    'Magma+Magma': { emoji: '🔥', name: 'Lava' },
+    'Ice+Magma': { emoji: '🪨', name: 'Basalt' },
+    'Mud+Magma': { emoji: '🪨', name: 'Clay' },
+    'Air+Magma': { emoji: '🌋', name: 'Lava' },
+    'Storm+Magma': { emoji: '⚡️', name: 'Lightning' },
+    'Ice+Ice': { emoji: '💧', name: 'Water' },
+    'Mud+Ice': { emoji: '🥤', name: 'Slush' },
+    'Air+Ice': { emoji: '💧', name: 'Water' },
+    'Storm+Ice': { emoji: '❄️', name: 'Snow' },
+    'Mud+Mud': { emoji: '🧱', name: 'Clay' },
+    'Air+Mud': { emoji: '🪨', name: 'Clay' },
+    'Storm+Mud': { emoji: '🪨', name: 'Clay' },
+    'Air+Air': { emoji: '🌬️', name: 'Wind' },
+    'Storm+Air': { emoji: '⚡', name: 'Lightning' },
+    'Storm+Storm': { emoji: '🌀', name: 'Hurricane' },
+    'Lava+Fire': { emoji: '🌋', name: 'Magma' },
+    'Lightning+Fire': { emoji: '⚡️🔥', name: 'Plasma' },
+    'Hydrogen+Fire': { emoji: 'H₂', name: 'Hydrogen' },
+    'Iceberg+Fire': { emoji: '💧', name: 'Water' },
+    'Clay+Fire': { emoji: '🏺', name: 'Ceramic' },
+    'Rain+Fire': { emoji: '💨', name: 'Steam' },
+    'Electricity+Fire': { emoji: '⚡️🔥', name: 'Plasma' },
+    'Volcano+Fire': { emoji: '🌋', name: 'Magma' },
+    'Sand+Fire': { emoji: '🥂', name: 'Glass' },
+    'Oxygen+Fire': { emoji: '🌌', name: 'Ozone' },
+    'Ash+Fire': { emoji: '🧪', name: 'Phosphorus' },
+    'Basalt+Fire': { emoji: '🌋', name: 'Lava' },
+    'Dust+Fire': { emoji: '🪵', name: 'Ash' },
+    'Fog+Fire': { emoji: '💨', name: 'Smoke' },
+    'Carbon+Fire': { emoji: '🌫️', name: 'Carbon dioxide' },
+    'Slush+Fire': { emoji: '💧', name: 'Water' },
+    'Snow+Fire': { emoji: '💨', name: 'Steam' },
+    'Hurricane+Fire': { emoji: '⚡️', name: 'Plasma' },
+    'Lava+Water': { emoji: '💨', name: 'Steam' },
+    'Lightning+Water': { emoji: '⚡', name: 'Electricity' },
+    'Hydrogen+Water': { emoji: '💧', name: 'H₂O' },
+    'Iceberg+Water': { emoji: '🧊', name: 'Ice' },
+    'Clay+Water': { emoji: '💩', name: 'Mud' },
+    'Rain+Water': { emoji: '💧', name: 'Hydrogen' },
+    'Electricity+Water': { emoji: '💧', name: 'Hydrogen' },
+    'Volcano+Water': { emoji: '💨', name: 'Steam' },
+    'Sand+Water': { emoji: '🌧️', name: 'Mud' },
+    'Oxygen+Water': { emoji: '💧', name: 'Hydrogen' },
+    'Ash+Water': { emoji: '🧪', name: 'Lye' },
+    'Basalt+Water': { emoji: '🟤', name: 'Mud' },
+    'Dust+Water': { emoji: '🪨', name: 'Mud' },
+    'Fog+Water': { emoji: '🌫️', name: 'Mist' },
+    'Carbon+Water': { emoji: '🍭', name: 'Glucose' },
+    'Slush+Water': { emoji: '🧊', name: 'Ice' },
+    'Snow+Water': { emoji: '🧊', name: 'Ice' },
+    'Hurricane+Water': { emoji: '🌧️', name: 'Rain' },
+    'Lava+Wind': { emoji: '🌋', name: 'Ash' },
+    'Lightning+Wind': { emoji: '🌬️', name: 'Air' }
+  };
+
+  // Function to calculate total elements if the variable is "Don't know"
+  function calculateTotalElements() {
+    const numStartingElements = 4; // Initial number of elements
+    const numLookupElements = Object.keys(lookupTable).length;
+    return numStartingElements + numLookupElements;
+  }
+
+  // Function to update the counters
+  function updateCounters() {
+    let totalElements;
+
+    // Check if we have a specific total elements count
+    if (totalElementsVariable === "Don't know") {
+      totalElements = calculateTotalElements();
+    } else {
+      totalElements = totalElementsVariable;
+    }
+
+    const discoveredElements = document.querySelectorAll('#sidebar .element').length;
+
+    // Update top counter
+    document.getElementById('counter').textContent = `Total Elements: ${totalElements}`;
+
+    // Update bottom counter
+    const discoveryCounter = document.getElementById('discovery-counter');
+    if (discoveredElements >= totalElements / 2) {
+      discoveryCounter.textContent = `How many elements are left to discover out there: ${totalElements - discoveredElements}`;
+    } else {
+      discoveryCounter.textContent = `How many elements you discovered: ${discoveredElements}`;
+    }
+
+    // Show win message if all elements are discovered
+    if (discoveredElements === totalElements) {
+      document.getElementById('win-message').style.display = 'block';
+    }
+  }
+
+  // Call updateCounters initially
+  updateCounters();
+
+  // Add event listener to all element divs
+  document.querySelectorAll('.element').forEach(el => {
+    el.addEventListener('click', function() {
+      cloneElement(el);
+    });
+  });
+
+  // Sound button functionality
+  const soundButton = document.getElementById('sound-button');
+  soundButton.addEventListener('click', () => {
+    soundEnabled = !soundEnabled;
+    if (soundEnabled) {
+      soundButton.textContent = 'Turn Sound Off';
+      document.getElementById('background-music').play();
+    } else {
+      soundButton.textContent = 'Turn Sound On';
+      document.getElementById('background-music').pause();
+    }
+  });
+
+  // Function to clone elements
+  function cloneElement(originalElement) {
+    const clonedElement = originalElement.cloneNode(true);
+    clonedElement.classList.add('cloned');
+    clonedElement.dataset.label = originalElement.dataset.label;
+    clonedElement.style.width = `${originalElement.offsetWidth}px`;
+    clonedElement.style.height = `${originalElement.offsetHeight}px`;
+    clonedElement.style.position = 'absolute';
+    clonedElement.style.left = '50px'; // Initial position
+    clonedElement.style.top = '50px'; // Initial position
+
+    clonedElement.addEventListener('mousedown', function(event) {
+      currentDraggedElement = clonedElement;
+      clonedElement.style.zIndex = '1001'; // Bring to front when dragging
+      moveElement(event);
+    });
+
+    clonedElement.addEventListener('mouseup', function() {
+      if (currentDraggedElement) {
+        elementsToCheck.push(clonedElement);
+        clonedElement.style.zIndex = '1000'; // Reset z-index after dragging
+      }
+    });
+
+    document.addEventListener('mousemove', moveElement);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    document.body.appendChild(clonedElement);
+    updateCounters(); // Update counter when a new element is added
+  }
+
+  function moveElement(event) {
+    if (currentDraggedElement) {
+      const x = event.clientX - (currentDraggedElement.offsetWidth / 2);
+      const y = event.clientY - (currentDraggedElement.offsetHeight / 2);
+      currentDraggedElement.style.left = x + 'px';
+      currentDraggedElement.style.top = y + 'px';
+    }
+  }
+
+  function handleMouseUp() {
+    if (currentDraggedElement) {
+      const sidebarRect = document.getElementById('sidebar').getBoundingClientRect();
+      const currentDraggedRect = currentDraggedElement.getBoundingClientRect();
+      
+      if (currentDraggedRect.right > sidebarRect.left &&
+          currentDraggedRect.left < sidebarRect.right &&
+          currentDraggedRect.bottom > sidebarRect.top &&
+          currentDraggedRect.top < sidebarRect.bottom) {
+        // If the cloned element is inside the sidebar, delete it
+        document.body.removeChild(currentDraggedElement);
+      } else {
+        // Check for collisions with other cloned elements
+        const clonedElements = document.querySelectorAll('.cloned');
+        clonedElements.forEach(el => {
+          if (el !== currentDraggedElement && isColliding(currentDraggedElement, el)) {
+            const combination = getElementCombination(currentDraggedElement.dataset.label, el.dataset.label);
+            if (combination) {
+              // Play combination sound if enabled
+              if (soundEnabled) {
+                document.getElementById('combination-sound').play();
+              }
+              // Remove the collided elements
+              document.body.removeChild(currentDraggedElement);
+              document.body.removeChild(el);
+
+              // Spawn new element from combination
+              spawnNewElement(combination.emoji, combination.name, currentDraggedElement.style.left, currentDraggedElement.style.top);
+
+              // Add new element to the sidebar
+              addElementToSidebar(combination.emoji, combination.name);
+
+              // Update counter after adding new element
+              updateCounters();
+            }
+          }
+        });
+      }
+      elementsToCheck = [];
+    }
+    currentDraggedElement = null;
+  }
+
+  function getElementCombination(type1, type2) {
+    const combination1 = `${type1}+${type2}`;
+    const combination2 = `${type2}+${type1}`; // Allow reverse combinations
+    return lookupTable[combination1] || lookupTable[combination2] || null;
+  }
+
+  function isColliding(el1, el2) {
+    const rect1 = el1.getBoundingClientRect();
+    const rect2 = el2.getBoundingClientRect();
+
+    return !(rect1.right < rect2.left || 
+             rect1.left > rect2.right || 
+             rect1.bottom < rect2.top || 
+             rect1.top > rect2.bottom);
+  }
+
+  function spawnNewElement(emoji, name, x, y) {
+    const newElement = document.createElement('div');
+    newElement.classList.add('cloned');
+    newElement.dataset.label = name;
+    newElement.innerHTML = `${emoji} ${name}`;
+    
+    newElement.style.width = `${currentDraggedElement.offsetWidth}px`;
+    newElement.style.height = `${currentDraggedElement.offsetHeight}px`;
+    
+    newElement.style.position = 'absolute';
+    newElement.style.left = x; // Use the x and y values passed from the previous element
+    newElement.style.top = y;
+
+    newElement.addEventListener('mousedown', function(event) {
+      currentDraggedElement = newElement;
+      newElement.style.zIndex = '1001'; // Bring to front when dragging
+      moveElement(event);
+    });
+
+    newElement.addEventListener('mouseup', function() {
+      if (currentDraggedElement) {
+        elementsToCheck.push(newElement);
+        newElement.style.zIndex = '1000'; // Reset z-index after dragging
+      }
+    });
+
+    document.addEventListener('mousemove', moveElement);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    document.body.appendChild(newElement);
+    updateCounters(); // Update counter when a new element is spawned
+  }
+
+  function addElementToSidebar(emoji, name) {
+    // Check if the element already exists in the sidebar
+    const existingElement = document.querySelector(`#sidebar .element[data-label="${name}"]`);
+    if (!existingElement) {
+      const newElement = document.createElement('div');
+      newElement.classList.add('element');
+      newElement.dataset.label = name;
+      newElement.dataset.type = name; // Use the name for type
+      newElement.innerHTML = `${emoji} ${name}`;
+
+      newElement.addEventListener('click', function() {
+        cloneElement(newElement);
+      });
+
+      document.getElementById('sidebar').appendChild(newElement);
+      updateCounters(); // Update counter when a new element is added
+    }
+  }
+</script>
+
+</body>
+</html>
